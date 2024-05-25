@@ -36,8 +36,9 @@ logic                b_wen_s; // Not used!
 logic                b_en_s;
 logic [3:0]          b_addr_s;
 logic [AXI_DW_g-1:0] b_data_in_s; // Not used!
-logic [AXI_DW_g-1:0] b_data_out_s; 
+logic [AXI_DW_g-1:0] b_data_out_s;
 
+// Raw BRAM generated block from Xilinx
 blk_mem_gen_1 bram_0 (
   .clka  (clk_i),       // input wire clka
   .ena   (a_en_s),      // input wire ena
@@ -54,6 +55,13 @@ blk_mem_gen_1 bram_0 (
   .doutb (b_data_out_s) // output wire [63 : 0] doutb
 );
 
+// The blocking buffer;
+//   1) waits for a grant
+//   2) loads data until its full
+//   3) dispatches data to the systolic array
+// In 3) the buffer assumes that in each cycle,
+// a row of the stored matrix is dispatched to the
+// systolic array.
 always_ff @(posedge clk_i) begin
   if (!rst_n_i) begin
     buffer_state_s <= IDLE;
@@ -86,11 +94,15 @@ always_ff @(posedge clk_i) begin
   end
 end
 
-assign axi_write_in_progress_s = (buffer_state_s  == LOADING) && 
-                                 (aw_burst_i      == 2'b01  ) && 
-                                 (s_axi_wvalid_i            ) && 
-                                 (s_axi_wready_o            )  ;
+// Check if the DMA is writing to the specific buffer and the
+// buffer is not full.
+assign axi_write_in_progress_s = (buffer_state_s == LOADING) && 
+                                 (aw_burst_i     == 2'b01  ) && 
+                                 (s_axi_wvalid_i           ) && 
+                                 (s_axi_wready_o           )  ;
 
+// Since we only implement incremental bursts, here the address
+// is incremented based on the size of the transaction.
 always_ff @(posedge clk_i) begin
   if (!rst_n_i) begin
     aw_base_addr_s <= 'd0;
@@ -100,14 +112,11 @@ always_ff @(posedge clk_i) begin
     end else begin
       aw_base_addr_s <= 'd0;                                 // Buffer always starts filling from 0x0
     end
-    // if ( grant_i && (buffer_state_s == IDLE) ) begin
-    //   aw_base_addr_s  <= 'd0;                                // Buffer always starts filling from 0x0
-    // end else if (axi_write_in_progress_s) begin
-    //   aw_base_addr_s <= aw_base_addr_s + ('d1 << aw_size_s); // See ax_size encoding
-    // end
   end
 end
 
+// We need an element counter to keep track of the number of loaded
+// elements. The buffer basically works like a FIFO.
 always_ff @(posedge clk_i) begin
   if (!rst_n_i) begin
     element_counter_s <= 'd0;
@@ -130,8 +139,11 @@ assign b_addr_s = 'd15 - element_counter_s;
 assign a_data_in_s = s_axi_wdata_i;
 assign b_data_in_s = 0;
 
+// Reports the status of the buffer. If the buffer is dispatching 
+// data to the systolic array, it is unavailable.
 assign available_o = (buffer_state_s != PUSHING) && !( (element_counter_s == 'd15) && s_axi_wready_o );
 
+// Response for handling data transfer on the write channel
 always_comb begin
   if ( (buffer_state_s == LOADING) && (element_counter_s < 'd16) ) begin
     s_axi_wready_o = 1'b1;

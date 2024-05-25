@@ -54,6 +54,8 @@ logic                s_axi_bready_s[2];
 logic                s_axi_bvalid_s[2];
 logic [1:0]          s_axi_bresp_s[2];
 
+// The 2 blocking buffers that store data
+// and control the write data axi channel.
 generate
   genvar i;
   for (i = 0; i < 2; i++) begin : blocking_buffer
@@ -80,6 +82,8 @@ generate
   end
 endgenerate
 
+// The double buffer either loads or
+// waits for a write request.
 always_ff @(posedge clk_i) begin
   if (rst_n_i) begin
     st_s <= IDLE;
@@ -105,6 +109,8 @@ assign last_w_in_s     = (s_axi_wlast_i   && s_axi_wready_o);
 assign s_axi_awready_o = (st_s == IDLE);
 assign s_axi_bresp_o   = 'd0;
 
+// When a valid write request is detected,
+// store the needed information.
 always_ff @(posedge clk_i) begin
   if (!rst_n_i) begin
     { aw_size_s,
@@ -117,6 +123,8 @@ always_ff @(posedge clk_i) begin
   end
 end
 
+// If the current transaction is the last,
+// assert the valid write response (bvalid) signal.
 always_ff @(posedge clk_i) begin
   if (!rst_n_i) begin
     s_axi_bvalid_o <= 1'b0;
@@ -129,6 +137,8 @@ always_ff @(posedge clk_i) begin
   end
 end
 
+// Buffer arbitration; The DMA chooses
+// a buffer by giving priority to buffer[0].
 always_comb begin
   if (avail_buffer_s[0]) begin
     grant_buffer_s[0] = 1'b1;
@@ -142,6 +152,8 @@ always_comb begin
   end
 end
 
+// The available buffer controls the
+// write signals of AXI.
 always_comb begin
   if (avail_buffer_s[0]) begin
     s_axi_wready_o    = s_axi_wready_s[0];

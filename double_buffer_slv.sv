@@ -91,7 +91,7 @@ endgenerate
 // The double buffer either loads or
 // waits for a write request.
 always_ff @(posedge clk_i) begin
-  if (rst_n_i) begin
+  if (!rst_n_i) begin
     st_s <= IDLE;
   end else begin
     case(st_s)

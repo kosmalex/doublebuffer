@@ -1,6 +1,7 @@
 module blocking_buffer_slv #(
   AXI_DW_g = 64,
-  AXI_AW_g = 32
+  AXI_AW_g = 32,
+  depth_g  = 16
 )(
   input  logic                clk_i,
   input  logic                rst_n_i,
@@ -18,13 +19,15 @@ module blocking_buffer_slv #(
   output logic                available_o
 );
 
+localparam depth_lp = $clog2(depth_g);
+
 typedef enum logic[2:0] { IDLE, LOADING, PUSHING } buffer_state_t;
 
 buffer_state_t       buffer_state_s;
 
 logic [AXI_AW_g-1:0] aw_base_addr_s;
 logic                axi_write_in_progress_s;
-logic [7:0]          element_counter_s;
+logic [depth_lp-1:0] element_counter_s;
 
 logic                a_wen_s;
 logic                a_en_s;
@@ -72,7 +75,7 @@ always_ff @(posedge clk_i) begin
       end
 
       LOADING: begin
-        if ( (element_counter_s == 'd15) && s_axi_wready_o ) begin
+        if ( (element_counter_s == (depth_lp-1)) && s_axi_wready_o ) begin
           buffer_state_s <= PUSHING;
         end else begin
           buffer_state_s <= LOADING;
@@ -120,7 +123,7 @@ end
 always_ff @(posedge clk_i) begin
   if (!rst_n_i) begin
     element_counter_s <= 'd0;
-  end else if ( axi_write_in_progress_s && (element_counter_s < 'd15) ) begin
+  end else if ( axi_write_in_progress_s && (element_counter_s < (depth_lp - 1)) ) begin
     element_counter_s <= element_counter_s + 'd1;
   end else if (buffer_state_s == PUSHING) begin
     element_counter_s <= element_counter_s - 'd1;
@@ -134,18 +137,18 @@ assign a_wen_s = s_axi_wvalid_i & s_axi_wready_o;
 assign b_wen_s = 1'b0;
 
 assign a_addr_s = aw_base_addr_s[AXI_AW_g-1:3];
-assign b_addr_s = 'd15 - element_counter_s;
+assign b_addr_s = (depth_lp - 1) - element_counter_s;
 
 assign a_data_in_s = s_axi_wdata_i;
 assign b_data_in_s = 0;
 
 // Reports the status of the buffer. If the buffer is dispatching 
 // data to the systolic array, it is unavailable.
-assign available_o = (buffer_state_s != PUSHING) && !( (element_counter_s == 'd15) && s_axi_wready_o );
+assign available_o = (buffer_state_s != PUSHING) && !( (element_counter_s == (depth_lp - 1)) && s_axi_wready_o );
 
 // Response for handling data transfer on the write channel
 always_comb begin
-  if ( (buffer_state_s == LOADING) && (element_counter_s < 'd16) ) begin
+  if ( (buffer_state_s == LOADING) && (element_counter_s < depth_lp) ) begin
     s_axi_wready_o = 1'b1;
   end else begin
     s_axi_wready_o = 1'b0;

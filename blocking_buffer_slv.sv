@@ -6,8 +6,8 @@ module blocking_buffer_slv #(
   input  logic                clk_i,
   input  logic                rst_n_i,
 
-  input  logic                aw_burst_i,
-  input  logic                aw_size_i,
+  input  logic [1:0]          aw_burst_i,
+  input  logic [2:0]          aw_size_i,
   
   output logic                s_axi_wready_o,
   input  logic                s_axi_wvalid_i,
@@ -16,7 +16,10 @@ module blocking_buffer_slv #(
   input  logic                s_axi_wlast_i,
 
   input  logic                grant_i,
-  output logic                available_o
+  output logic                available_o,
+  output logic                pushing_o,
+
+  output logic [AXI_DW_g-1:0] data_o
 );
 
 localparam depth_lp = $clog2(depth_g);
@@ -75,7 +78,7 @@ always_ff @(posedge clk_i) begin
       end
 
       LOADING: begin
-        if ( (element_counter_s == (depth_lp-1)) && s_axi_wready_o ) begin
+        if ( (element_counter_s == (depth_g - 1)) && s_axi_wready_o ) begin
           buffer_state_s <= PUSHING;
         end else begin
           buffer_state_s <= LOADING;
@@ -123,32 +126,38 @@ end
 always_ff @(posedge clk_i) begin
   if (!rst_n_i) begin
     element_counter_s <= 'd0;
-  end else if ( axi_write_in_progress_s && (element_counter_s < (depth_lp - 1)) ) begin
+  end else if ( axi_write_in_progress_s && (element_counter_s < (depth_g - 1)) ) begin
     element_counter_s <= element_counter_s + 'd1;
   end else if (buffer_state_s == PUSHING) begin
     element_counter_s <= element_counter_s - 'd1;
   end
 end
 
-assign a_en_s = 1'b1;
-assign b_en_s = 1'b1;
+assign a_en_s      = (buffer_state_s == LOADING);
+assign b_en_s      = (buffer_state_s == PUSHING);
 
-assign a_wen_s = s_axi_wvalid_i & s_axi_wready_o;
-assign b_wen_s = 1'b0;
+assign a_wen_s     = s_axi_wvalid_i & s_axi_wready_o;
+assign b_wen_s     = 1'b0;
 
-assign a_addr_s = aw_base_addr_s[AXI_AW_g-1:3];
-assign b_addr_s = (depth_lp - 1) - element_counter_s;
+assign a_addr_s    = aw_base_addr_s[AXI_AW_g-1:3];
+assign b_addr_s    = (depth_g - 1) - element_counter_s;
 
 assign a_data_in_s = s_axi_wdata_i;
 assign b_data_in_s = 0;
 
+assign data_o      = b_data_out_s;
+
 // Reports the status of the buffer. If the buffer is dispatching 
-// data to the systolic array, it is unavailable.
-assign available_o = (buffer_state_s != PUSHING) && !( (element_counter_s == (depth_lp - 1)) && s_axi_wready_o );
+// data to the systolic array, it is unavailable. The extra and (top-most &&)
+// condition is to make sure buffers are filled back2back.
+assign available_o = (buffer_state_s != PUSHING) && !( (element_counter_s == (depth_g - 1)) && s_axi_wready_o );
+
+// Reports when the buffer starts to provide data
+assign pushing_o = (buffer_state_s == PUSHING);
 
 // Response for handling data transfer on the write channel
 always_comb begin
-  if ( (buffer_state_s == LOADING) && (element_counter_s < depth_lp) ) begin
+  if ( (buffer_state_s == LOADING) && (element_counter_s < depth_g) ) begin
     s_axi_wready_o = 1'b1;
   end else begin
     s_axi_wready_o = 1'b0;

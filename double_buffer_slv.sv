@@ -22,7 +22,9 @@ module double_buffer_slv #(
 
   input  logic                s_axi_bready_i,
   output logic                s_axi_bvalid_o,
-  output logic [1:0]          s_axi_bresp_o
+  output logic [1:0]          s_axi_bresp_o,
+
+  output logic [AXI_DW_g-1:0] data_o
 );
 
 typedef enum logic[1:0] { IDLE, BUSY } dbuffer_state_t;
@@ -30,7 +32,9 @@ typedef enum logic[1:0] { IDLE, BUSY } dbuffer_state_t;
 dbuffer_state_t      st_s;
 
 logic                avail_buffer_s[2];
+logic                pushing_buffer_s[2];
 logic                grant_buffer_s[2];
+logic [AXI_DW_g-1:0] data_buffer_s[2];
 logic                valid_aw_in_s;
 
 logic [2:0]          aw_size_s;
@@ -77,7 +81,9 @@ generate
       .s_axi_wlast_i   (s_axi_wlast_i),
       
       .grant_i         (grant_buffer_s[i]),
-      .available_o     (avail_buffer_s[i])
+      .available_o     (avail_buffer_s[i]),
+      .pushing_o       (pushing_buffer_s[i]),
+      .data_o          (data_buffer_s[i])
     );
   end
 endgenerate
@@ -149,6 +155,19 @@ always_comb begin
   end else begin
     grant_buffer_s[0] = 1'b0;
     grant_buffer_s[1] = 1'b0;
+  end
+end
+
+// Buffer output arbitration; Whoever is
+// pushing gets the channel. Again prioritize
+// buffer 0.
+always_comb begin
+  if (pushing_buffer_s[0]) begin
+    data_o = data_buffer_s[0];
+  end else if (pushing_buffer_s[1]) begin
+    data_o = data_buffer_s[1];
+  end else begin
+    data_o = 'd0;
   end
 end
 

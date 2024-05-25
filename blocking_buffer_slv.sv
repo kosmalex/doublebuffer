@@ -60,7 +60,7 @@ blk_mem_gen_1 bram_0 (
 
 // The blocking buffer;
 //   1) waits for a grant
-//   2) loads data until its full
+//   2) loads data until it's full
 //   3) dispatches data to the systolic array
 // In 3) the buffer assumes that in each cycle,
 // a row of the stored matrix is dispatched to the

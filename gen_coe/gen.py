@@ -10,13 +10,13 @@ with open("test.coe", "w") as coe_file:
              "memory_initialization_vector=\n"])
   )
 
-  matrix = np.random.randint(9000000000000000000, size=(8, 8), dtype="int64")
+  matrix = np.random.randint(9000000000000000000, size=(1, 64), dtype="int64")
 
   # print(matrix)
 
   for row in matrix:
     for num in row:
-      coe_file.write("0x" + format(num, '016x') + ",\n")
+      coe_file.write(format(num, '016x') + ",\n")
 
 with open("test.coe", "r") as coe_file:
   coe_file_data = coe_file.read()

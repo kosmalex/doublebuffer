@@ -24,6 +24,8 @@ module double_buffer_slv #(
   output logic                s_axi_bvalid_o,
   output logic [1:0]          s_axi_bresp_o,
 
+  input  logic                stall_i,
+  output logic                pushing_o,
   output logic [AXI_DW_g-1:0] data_o
 );
 
@@ -34,29 +36,19 @@ dbuffer_state_t      st_s;
 logic                avail_buffer_s[2];
 logic                pushing_buffer_s[2];
 logic                grant_buffer_s[2];
+logic                grant_buffer_push_s[2];
 logic [AXI_DW_g-1:0] data_buffer_s[2];
 logic                valid_aw_in_s;
 
 logic [2:0]          aw_size_s;
 logic [1:0]          aw_burst_type_s;
-logic [AXI_AW_g-1:0] aw_base_addr_s;
 
-logic                s_axi_awready_s[2];
-logic                s_axi_awvalid_s[2];
-logic [AXI_AW_g-1:0] s_axi_awaddr_s[2];
-logic [7:0]          s_axi_awlen_s[2];
-logic [2:0]          s_axi_awsize_s[2];
-logic [1:0]          s_axi_awburst_s[2];
-logic [2:0]          s_axi_awprot_s[2];
-logic [3:0]          s_axi_awcache_s[2];
 logic                s_axi_wready_s[2];
 logic                s_axi_wvalid_s[2];
 logic [AXI_DW_g-1:0] s_axi_wdata_s[2];
 logic [3:0]          s_axi_wstrb_s[2];
 logic                s_axi_wlast_s[2];
-logic                s_axi_bready_s[2];
-logic                s_axi_bvalid_s[2];
-logic [1:0]          s_axi_bresp_s[2];
+
 
 // The 2 blocking buffers that store data
 // and control the write data axi channel.
@@ -80,6 +72,7 @@ generate
       .s_axi_wstrb_i   (s_axi_wstrb_i),
       .s_axi_wlast_i   (s_axi_wlast_i),
       
+      .grant_push_i    (grant_buffer_push_s[i]),
       .grant_i         (grant_buffer_s[i]),
       .available_o     (avail_buffer_s[i]),
       .pushing_o       (pushing_buffer_s[i]),
@@ -156,6 +149,17 @@ always_comb begin
     grant_buffer_s[0] = 1'b0;
     grant_buffer_s[1] = 1'b0;
   end
+
+  if (pushing_buffer_s[0]) begin
+    grant_buffer_push_s[0] = !stall_i;
+    grant_buffer_push_s[1] = 1'b0;
+  end else if (pushing_buffer_s[1]) begin
+    grant_buffer_push_s[0] = 1'b0;
+    grant_buffer_push_s[1] = !stall_i;
+  end else begin
+    grant_buffer_push_s[0] = 1'b0;
+    grant_buffer_push_s[1] = 1'b0;
+  end
 end
 
 // Buffer output arbitration; Whoever is
@@ -170,6 +174,9 @@ always_comb begin
     data_o = 'd0;
   end
 end
+
+assign pushing_o = (pushing_buffer_s[0] & grant_buffer_push_s[0]) |
+                   (pushing_buffer_s[1] & grant_buffer_push_s[1]) ;
 
 // The available buffer controls the
 // write signals of AXI.
